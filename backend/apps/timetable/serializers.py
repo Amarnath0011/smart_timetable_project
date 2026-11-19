@@ -26,6 +26,8 @@ class ScheduleVersionSerializer(serializers.ModelSerializer):
             'status_display', 'revision', 'name', 'notes',
             'meetings_count', 'created_at', 'updated_at'
         ]
+        read_only_fields = ['version_no', 'revision']
+        validators = []
 
 
 class ScheduledMeetingSerializer(serializers.ModelSerializer):

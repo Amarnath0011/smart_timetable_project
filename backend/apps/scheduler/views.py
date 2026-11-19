@@ -119,12 +119,9 @@ class GenerateTimetableAPIView(APIView):
         except Exception as exc:
             logger.warning(f"Celery dispatch failed, running inline: {exc}")
             # Fallback to direct synchronous execution if Celery broker/worker is offline
-            generate_timetable(
-                version_id=version_id,
-                branch_ids=branch_ids,
-                time_limit=time_limit,
-                replace_existing=replace_existing,
-                user_id=request.user.id
+            generate_timetable.apply(
+                args=[version_id, branch_ids, time_limit, replace_existing, request.user.id],
+                task_id=task_id
             )
 
         return Response(

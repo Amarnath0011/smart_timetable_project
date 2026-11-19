@@ -61,3 +61,21 @@ class IsSuperAdminOrReadOnly(permissions.BasePermission):
             return True
         return request.user.is_superuser or request.user.has_role(Role.Code.SUPER_ADMIN)
 
+
+class IsBranchCoordinatorOrReadOnly(permissions.BasePermission):
+    """
+    Allows read access to any authenticated user, but write access to Branch Coordinators and Super Admins.
+    """
+    message = 'Modification permitted only for Branch Coordinators and Super Administrators.'
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return (
+            request.user.is_superuser or
+            request.user.has_role(Role.Code.SUPER_ADMIN) or
+            request.user.has_role(Role.Code.BRANCH_COORDINATOR)
+        )
+

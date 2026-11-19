@@ -78,7 +78,9 @@ export const CurriculumPage: React.FC = () => {
   };
 
   const assignedCourseIds = new Set(curriculumItems.map((ci) => ci.course));
-  const availableCourses = allCourses.filter((c) => !assignedCourseIds.has(c.id));
+  const availableCourses = allCourses.filter(
+    (c) => !assignedCourseIds.has(c.id) && (!c.semester || c.semester === selectedSemester)
+  );
 
   return (
     <div className="space-y-6">
@@ -231,7 +233,7 @@ export const CurriculumPage: React.FC = () => {
                 <option value="">-- Choose a Course --</option>
                 {availableCourses.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.code} — {c.name} ({c.course_type}, {c.credit}cr)
+                    {c.code} — {c.name} [Sem {c.semester || 1}] ({c.course_type}, {c.credit}cr)
                   </option>
                 ))}
               </select>

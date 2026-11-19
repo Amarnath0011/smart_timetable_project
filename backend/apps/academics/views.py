@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -197,26 +198,36 @@ class InstructionGroupViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema_view(
-    list=extend_schema(description="List course catalog. Filter by ?course_type=<THEORY|LAB>, ?department=<id>."),
+    list=extend_schema(description="List course catalog. Filter by ?course_type=<THEORY|LAB>, ?department=<id>, ?branch=<id>, ?semester=<num>."),
     create=extend_schema(description="Create course with delivery rule."),
 )
 class CourseViewSet(viewsets.ModelViewSet):
-    queryset = Course.objects.select_related('department', 'delivery_rule').all()
+    queryset = Course.objects.select_related('department', 'branch', 'professor', 'delivery_rule').all()
     serializer_class = CourseSerializer
     permission_classes = [IsSuperAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['code', 'name', 'department__code', 'department__name']
-    ordering_fields = ['code', 'name', 'credit', 'course_type']
-    ordering = ['code']
+    search_fields = ['code', 'name', 'department__code', 'department__name', 'branch__code', 'branch__name', 'professor__full_name']
+    ordering_fields = ['code', 'name', 'credit', 'course_type', 'semester']
+    ordering = ['semester', 'code']
 
     def get_queryset(self):
         qs = super().get_queryset()
         course_type = self.request.query_params.get('course_type')
         dept_id = self.request.query_params.get('department')
+        branch_id = self.request.query_params.get('branch') or self.request.query_params.get('branch_id')
+        semester = self.request.query_params.get('semester')
+        professor_id = self.request.query_params.get('professor')
+
         if course_type:
             qs = qs.filter(course_type=course_type)
         if dept_id:
             qs = qs.filter(department_id=dept_id)
+        if branch_id:
+            qs = qs.filter(branch_id=branch_id)
+        if semester:
+            qs = qs.filter(semester=semester)
+        if professor_id:
+            qs = qs.filter(professor_id=professor_id)
         return qs
 
 
@@ -281,11 +292,28 @@ class CourseOfferingViewSet(viewsets.ModelViewSet):
         except Cohort.DoesNotExist:
             return Response({'detail': 'Cohort not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        curriculum_items = CurriculumItem.objects.filter(
+        curriculum_items = list(CurriculumItem.objects.filter(
             branch=cohort.branch,
             semester_no=cohort.semester_no,
             is_active=True
+        ))
+
+        # Include courses matching this branch (or department) and semester
+        direct_courses = Course.objects.filter(
+            semester=cohort.semester_no,
+            is_active=True
+        ).filter(
+            models.Q(branch=cohort.branch) | models.Q(branch__isnull=True, department=cohort.branch.department)
         )
+        for c in direct_courses:
+            ci, _ = CurriculumItem.objects.get_or_create(
+                branch=cohort.branch,
+                semester_no=cohort.semester_no,
+                course=c,
+                defaults={'is_elective': False}
+            )
+            if ci not in curriculum_items:
+                curriculum_items.append(ci)
 
         created_offerings = []
         for item in curriculum_items:
@@ -295,6 +323,12 @@ class CourseOfferingViewSet(viewsets.ModelViewSet):
                 curriculum_item=item
             )
             created_offerings.append(offering)
+            if item.course.professor:
+                TeachingAssignment.objects.get_or_create(
+                    course_offering=offering,
+                    professor=item.course.professor,
+                    defaults={'is_primary': True}
+                )
 
         serializer = CourseOfferingSerializer(created_offerings, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

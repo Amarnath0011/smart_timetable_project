@@ -115,6 +115,10 @@ class CourseDeliveryRuleSerializer(serializers.ModelSerializer):
 class CourseSerializer(serializers.ModelSerializer):
     department_code = serializers.CharField(source='department.code', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
+    branch_code = serializers.CharField(source='branch.code', read_only=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    professor_name = serializers.CharField(source='professor.full_name', read_only=True)
+    professor_email = serializers.CharField(source='professor.email', read_only=True)
     course_type_display = serializers.CharField(source='get_course_type_display', read_only=True)
     delivery_rule = CourseDeliveryRuleSerializer(required=False)
 
@@ -122,12 +126,18 @@ class CourseSerializer(serializers.ModelSerializer):
         model = Course
         fields = [
             'id', 'department', 'department_code', 'department_name',
+            'branch', 'branch_code', 'branch_name', 'semester',
+            'professor', 'professor_name', 'professor_email',
             'code', 'name', 'credit', 'course_type', 'course_type_display',
             'description', 'is_active', 'delivery_rule', 'created_at', 'updated_at'
         ]
 
     def create(self, validated_data):
         rule_data = validated_data.pop('delivery_rule', None)
+        branch = validated_data.get('branch')
+        if branch and not validated_data.get('department'):
+            validated_data['department'] = branch.department
+
         course = Course.objects.create(**validated_data)
 
         if rule_data:
@@ -148,10 +158,32 @@ class CourseSerializer(serializers.ModelSerializer):
                     duration_slots=1,
                     preferred_room_type='CLASSROOM'
                 )
+
+        # Auto-link to CurriculumItem for the branch and semester if branch provided
+        if course.branch and course.semester:
+            CurriculumItem.objects.get_or_create(
+                branch=course.branch,
+                semester_no=course.semester,
+                course=course,
+                defaults={'is_elective': False}
+            )
+
+        # If professor specified, sync teaching assignment to any existing offerings
+        if course.professor:
+            for off in CourseOffering.objects.filter(curriculum_item__course=course):
+                TeachingAssignment.objects.update_or_create(
+                    course_offering=off,
+                    defaults={'professor': course.professor, 'is_primary': True}
+                )
+
         return course
 
     def update(self, instance, validated_data):
         rule_data = validated_data.pop('delivery_rule', None)
+        branch = validated_data.get('branch', instance.branch)
+        if branch and not validated_data.get('department') and not instance.department:
+            validated_data['department'] = branch.department
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -161,6 +193,22 @@ class CourseSerializer(serializers.ModelSerializer):
                 course=instance,
                 defaults=rule_data
             )
+
+        if instance.branch and instance.semester:
+            CurriculumItem.objects.get_or_create(
+                branch=instance.branch,
+                semester_no=instance.semester,
+                course=instance,
+                defaults={'is_elective': False}
+            )
+
+        if instance.professor:
+            for off in CourseOffering.objects.filter(curriculum_item__course=instance):
+                TeachingAssignment.objects.update_or_create(
+                    course_offering=off,
+                    defaults={'professor': instance.professor, 'is_primary': True}
+                )
+
         return instance
 
 
@@ -196,6 +244,8 @@ class CourseOfferingSerializer(serializers.ModelSerializer):
     course_name = serializers.CharField(source='curriculum_item.course.name', read_only=True)
     course_type = serializers.CharField(source='curriculum_item.course.course_type', read_only=True)
     course_credit = serializers.IntegerField(source='curriculum_item.course.credit', read_only=True)
+    semester_no = serializers.IntegerField(source='curriculum_item.semester_no', read_only=True)
+    branch_id = serializers.IntegerField(source='cohort.branch_id', read_only=True)
     assignments_count = serializers.IntegerField(source='teaching_assignments.count', read_only=True)
 
     class Meta:
@@ -203,6 +253,7 @@ class CourseOfferingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'term', 'term_name', 'cohort', 'cohort_str',
             'curriculum_item', 'course_code', 'course_name', 'course_type', 'course_credit',
+            'semester_no', 'branch_id',
             'assignments_count', 'is_active', 'created_at', 'updated_at'
         ]
 

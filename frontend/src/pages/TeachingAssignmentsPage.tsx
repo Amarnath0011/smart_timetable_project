@@ -145,7 +145,7 @@ export const TeachingAssignmentsPage: React.FC = () => {
         >
           {cohorts.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.branch_code} Sem {c.semester_no} Sec {c.section_code} ({c.term_name})
+              {c.branch_code} Sem {c.semester_no} Batch {c.section_code} ({c.term_name})
             </option>
           ))}
         </select>

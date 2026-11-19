@@ -195,6 +195,25 @@ class Course(models.Model):
         blank=True,
         related_name='courses'
     )
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='courses'
+    )
+    professor = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='taught_courses',
+        help_text="Faculty professor assigned to teach this course"
+    )
+    semester = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Target semester number (e.g. 1 through 8)"
+    )
     code = models.CharField(max_length=30, unique=True, db_index=True)
     name = models.CharField(max_length=150)
     credit = models.PositiveIntegerField(default=3)
@@ -214,7 +233,12 @@ class Course(models.Model):
         ordering = ['code']
 
     def __str__(self):
-        return f"{self.code} - {self.name} ({self.get_course_type_display()}, {self.credit}cr)"
+        sem_str = f", Sem {self.semester}" if self.semester else ""
+        return f"{self.code} - {self.name} ({self.get_course_type_display()}, {self.credit}cr{sem_str})"
+
+    @property
+    def curriculum_items(self):
+        return self.curriculum_inclusions.all()
 
 
 class CourseDeliveryRule(models.Model):
@@ -358,7 +382,7 @@ class TeachingAssignment(models.Model):
     class Meta:
         db_table = 'teaching_assignments'
         unique_together = ('course_offering', 'professor', 'instruction_group')
-        ordering = ['course_offering', 'professor']
+        ordering = ['course_offering_id', 'professor_id']
 
     def __str__(self):
         grp = f" [{self.instruction_group.code}]" if self.instruction_group else " [Entire Cohort]"

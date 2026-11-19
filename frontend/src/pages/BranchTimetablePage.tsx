@@ -57,6 +57,22 @@ export const BranchTimetablePage: React.FC = () => {
 
   const activeTerm = terms.find((t) => t.id === selectedTermId) || terms[0];
 
+  const maxSemesters = activeBranch?.max_semesters || 8;
+  const allSemesters = React.useMemo(() => Array.from({ length: maxSemesters }, (_, i) => i + 1), [maxSemesters]);
+  const termCycle = activeTerm?.term_type;
+  const visibleSemesters = React.useMemo(() => {
+    if (termCycle === 'ODD') return allSemesters.filter((s) => s % 2 === 1);
+    if (termCycle === 'EVEN') return allSemesters.filter((s) => s % 2 === 0);
+    return allSemesters;
+  }, [allSemesters, termCycle]);
+
+  // Adjust selected semester if not in visible semesters
+  React.useEffect(() => {
+    if (visibleSemesters.length > 0 && (!selectedSemester || !visibleSemesters.includes(selectedSemester))) {
+      setSelectedSemester(visibleSemesters[0]);
+    }
+  }, [visibleSemesters, selectedSemester]);
+
   const { data: branchTimetable, isLoading } = useQuery({
     queryKey: ['branch-timetable', activeBranch?.id, activeTerm?.id, selectedSemester],
     queryFn: () =>
@@ -100,6 +116,18 @@ export const BranchTimetablePage: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2">
           <select
+            value={activeTerm?.id || ''}
+            onChange={(e) => setSelectedTermId(Number(e.target.value))}
+            className="px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold"
+          >
+            {terms.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.term_type_display || t.term_type})
+              </option>
+            ))}
+          </select>
+
+          <select
             value={activeBranch?.id || ''}
             onChange={(e) => setSelectedBranchId(Number(e.target.value))}
             className="px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
@@ -116,9 +144,9 @@ export const BranchTimetablePage: React.FC = () => {
             onChange={(e) => setSelectedSemester(Number(e.target.value))}
             className="px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium"
           >
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+            {visibleSemesters.map((s) => (
               <option key={s} value={s}>
-                Semester {s}
+                Semester {s} ({s % 2 === 1 ? 'Odd' : 'Even'})
               </option>
             ))}
           </select>

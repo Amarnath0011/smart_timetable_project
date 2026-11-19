@@ -227,15 +227,13 @@ class TimetableValidator:
         target_groups = []
         if teaching_assignment.instruction_group:
             target_groups.append(teaching_assignment.instruction_group)
+            total_students = teaching_assignment.instruction_group.size
         elif instruction_group_ids:
             target_groups = list(InstructionGroup.objects.filter(id__in=instruction_group_ids))
+            total_students = min(sum(g.size for g in target_groups), cohort.student_count) if cohort.student_count else sum(g.size for g in target_groups)
         else:
-            # Default to all cohort lab groups or full cohort student count
+            # Default to all cohort lab groups for collision checking
             target_groups = list(cohort.instruction_groups.all())
-
-        if target_groups:
-            total_students = sum(g.size for g in target_groups)
-        else:
             total_students = cohort.student_count
 
         if room.capacity < total_students:
