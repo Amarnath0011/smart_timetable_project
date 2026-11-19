@@ -37,6 +37,12 @@ export const AutoGenerateModal: React.FC<AutoGenerateModalProps> = ({
   const [replaceExisting, setReplaceExisting] = useState<boolean>(true);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (branches.length > 0 && selectedBranchIds.length === 0) {
+      setSelectedBranchIds(branches.map((b) => b.id));
+    }
+  }, [branches]);
+
   if (!isOpen) return null;
 
   const handleToggleBranch = (id: number) => {

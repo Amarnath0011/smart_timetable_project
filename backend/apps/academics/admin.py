@@ -88,9 +88,9 @@ class CourseDeliveryRuleInline(admin.StackedInline):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'department', 'credit', 'course_type', 'is_active')
-    list_filter = ('course_type', 'department', 'is_active')
-    search_fields = ('code', 'name')
+    list_display = ('code', 'name', 'semester', 'branch', 'professor', 'department', 'credit', 'course_type', 'is_active')
+    list_filter = ('semester', 'branch', 'professor', 'course_type', 'department', 'is_active')
+    search_fields = ('code', 'name', 'professor__full_name')
     inlines = [CourseDeliveryRuleInline]
 
 

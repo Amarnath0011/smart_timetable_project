@@ -227,7 +227,7 @@ class TimetableGenerator:
                 required_capacity = asgn.instruction_group.size
             else:
                 target_groups = list(offering.cohort.instruction_groups.all())
-                required_capacity = sum(g.size for g in target_groups) if target_groups else offering.cohort.student_count
+                required_capacity = offering.cohort.student_count
 
             group_ids = [g.id for g in target_groups]
 
@@ -541,11 +541,66 @@ class TimetableGenerator:
             proposed_meetings = []
             placed_task_count = 0
 
+            # Pre-collect placed tasks to identify occupied slots in this solution
+            sol_prof_slots = defaultdict(set)
+            sol_room_slots = defaultdict(set)
+            sol_cohort_slots = defaultdict(set)
+
+            for t in meeting_tasks:
+                tid = t['task_id']
+                if solver.Value(slack_unscheduled[tid]) == 0:
+                    dur = t['duration_slots']
+                    for (day, start_slot, room_id, var) in task_placements[tid]:
+                        if solver.Value(var) == 1:
+                            for s in range(start_slot, start_slot + dur):
+                                sol_prof_slots[t['professor'].id].add((day, s))
+                                sol_room_slots[room_id].add((day, s))
+                                sol_cohort_slots[t['cohort'].id].add((day, s))
+                            break
+
             for t in meeting_tasks:
                 tid = t['task_id']
                 is_slack = solver.Value(slack_unscheduled[tid]) == 1
 
                 if is_slack:
+                    # Diagnose specific cause: Professor unavailability vs Room unavailability vs Cohort clash
+                    dur = t['duration_slots']
+                    prof_id = t['professor'].id
+                    cohort_id = t['cohort'].id
+
+                    prof_clashes = 0
+                    room_clashes = 0
+                    cohort_clashes = 0
+                    total_candidates = len(task_placements[tid])
+
+                    if total_candidates == 0:
+                        if not t['candidate_rooms']:
+                            room_type_str = 'laboratory' if t['course'].course_type == Course.CourseType.LAB else 'classroom'
+                            req_cap = t['assignment'].instruction_group.size if t['assignment'].instruction_group else t['cohort'].student_count
+                            reason = f"No compatible {room_type_str} found with capacity >= {req_cap}."
+                        else:
+                            reason = f"Professor {t['professor'].full_name} is not available across all candidate time slots (unavailability or prior booking)."
+                    else:
+                        for (day, start_slot, room_id, var) in task_placements[tid]:
+                            target_slots = range(start_slot, start_slot + dur)
+                            if any((day, s) in sol_prof_slots[prof_id] for s in target_slots):
+                                prof_clashes += 1
+                            if any((day, s) in sol_room_slots[room_id] for s in target_slots):
+                                room_clashes += 1
+                            if any((day, s) in sol_cohort_slots[cohort_id] for s in target_slots):
+                                cohort_clashes += 1
+
+                        if prof_clashes > 0 and room_clashes == 0:
+                            reason = f"Professor Conflict: Dr. {t['professor'].full_name} is not available (already assigned to another class at that time)."
+                        elif room_clashes > 0 and prof_clashes == 0:
+                            reason = f"Room Conflict: Room is not available at that time (all compatible rooms occupied by other classes)."
+                        elif prof_clashes > 0 and room_clashes > 0:
+                            reason = f"Mutual Conflict: Both Professor {t['professor'].full_name} and candidate rooms are not available at that time."
+                        elif cohort_clashes > 0:
+                            reason = f"Cohort Conflict: Cohort {t['cohort']} timetable is already full at that time."
+                        else:
+                            reason = "Solver could not find a clash-free slot with compatible room/professor availability."
+
                     unscheduled_offerings.append({
                         'assignment_id': t['assignment'].id,
                         'course_code': t['course'].code,
@@ -553,7 +608,7 @@ class TimetableGenerator:
                         'cohort': str(t['cohort']),
                         'professor': t['professor'].full_name,
                         'meeting_index': t['meeting_index'] + 1,
-                        'reason': 'Solver could not find a clash-free slot with compatible room/professor availability.',
+                        'reason': reason,
                     })
                     continue
 

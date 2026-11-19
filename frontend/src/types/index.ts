@@ -233,11 +233,18 @@ export interface Course {
   department?: number | null;
   department_code?: string;
   department_name?: string;
+  branch?: number | null;
+  branch_code?: string;
+  branch_name?: string;
+  professor?: number | null;
+  professor_name?: string;
+  professor_email?: string;
   code: string;
   name: string;
   credit: number;
   course_type: CourseType;
   course_type_display?: string;
+  semester: number;
   description?: string;
   is_active: boolean;
   delivery_rule?: CourseDeliveryRule | null;
@@ -272,6 +279,8 @@ export interface CourseOffering {
   course_name?: string;
   course_type?: CourseType;
   course_credit?: number;
+  semester_no?: number;
+  branch_id?: number;
   assignments_count: number;
   is_active: boolean;
   created_at: string;
@@ -485,8 +494,17 @@ export interface AuditLogEntry {
 
 export interface MyTimetableResponse {
   schedule_version_id?: number | null;
+  version_name?: string | null;
+  term_id?: number | null;
   term_name?: string | null;
   status?: ScheduleStatus | null;
+  created_by?: string | null;
+  available_versions?: Array<{
+    id: number;
+    version_no: number;
+    name: string;
+    status: ScheduleStatus;
+  }>;
   professor_id: number;
   professor_name: string;
   meetings: ScheduledMeeting[];

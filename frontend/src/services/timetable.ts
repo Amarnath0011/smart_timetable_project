@@ -97,8 +97,10 @@ export const timetableService = {
   },
 
   // Phase 4: Read-Only Timetable Endpoints
-  getMyTimetable: async (termId?: number): Promise<MyTimetableResponse> => {
-    const params = termId ? { term_id: termId } : {};
+  getMyTimetable: async (termId?: number, versionId?: number): Promise<MyTimetableResponse> => {
+    const params: Record<string, any> = {};
+    if (termId) params.term_id = termId;
+    if (versionId) params.version_id = versionId;
     const res = await api.get<MyTimetableResponse>('/my-timetable/', { params });
     return res.data;
   },

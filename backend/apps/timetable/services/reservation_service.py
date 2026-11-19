@@ -1,7 +1,6 @@
 from typing import List, Dict, Any, Optional
 from django.db import transaction, IntegrityError
-from django.core.exceptions import ValidationError
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import ValidationError, APIException
 from rest_framework import status
 from apps.accounts.models import User
 from apps.academics.models import TeachingAssignment, InstructionGroup
@@ -64,7 +63,7 @@ class TimetableReservationService:
             if any(t in ['VERSION_LOCKED', 'VERSION_UNDER_REVIEW', 'PERMISSION_DENIED'] for t in conflict_types):
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied(detail=error_msg)
-            raise ValidationError(error_msg)
+            raise ValidationError(detail={'detail': error_msg, 'conflicts': val_result['conflicts']})
 
         # Step 3: Compute affected slots
         slot_numbers = list(range(start_slot, start_slot + duration_slots))
@@ -293,7 +292,8 @@ class TimetableReservationService:
             from channels.layers import get_channel_layer
             from asgiref.sync import async_to_sync
             channel_layer = get_channel_layer()
-            if channel_layer:
+            # InMemoryChannelLayer deadlocks with async_to_sync across synchronous worker threads on Windows; only broadcast when external layer (e.g. Redis) is used
+            if channel_layer and 'InMemoryChannelLayer' not in type(channel_layer).__name__:
                 async_to_sync(channel_layer.group_send)(
                     f"timetable_{schedule_version.id}",
                     {

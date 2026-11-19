@@ -37,6 +37,7 @@ const SLOTS = [
 
 export const MyTimetablePage: React.FC = () => {
   const [selectedTermId, setSelectedTermId] = useState<number | undefined>();
+  const [selectedVersionId, setSelectedVersionId] = useState<number | undefined>();
 
   const { data: terms = [] } = useQuery({
     queryKey: ['academic-terms'],
@@ -46,8 +47,8 @@ export const MyTimetablePage: React.FC = () => {
   const activeTerm = terms.find((t) => t.id === selectedTermId) || terms[0];
 
   const { data: timetable, isLoading } = useQuery({
-    queryKey: ['my-timetable', activeTerm?.id],
-    queryFn: () => timetableService.getMyTimetable(activeTerm?.id),
+    queryKey: ['my-timetable', activeTerm?.id, selectedVersionId],
+    queryFn: () => timetableService.getMyTimetable(activeTerm?.id, selectedVersionId),
     enabled: !!activeTerm,
   });
 
@@ -82,10 +83,13 @@ export const MyTimetablePage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={activeTerm?.id || ''}
-            onChange={(e) => setSelectedTermId(Number(e.target.value))}
+            onChange={(e) => {
+              setSelectedTermId(Number(e.target.value));
+              setSelectedVersionId(undefined);
+            }}
             className="px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium"
           >
             {terms.map((t) => (
@@ -94,6 +98,20 @@ export const MyTimetablePage: React.FC = () => {
               </option>
             ))}
           </select>
+
+          {timetable?.available_versions && timetable.available_versions.length > 1 && (
+            <select
+              value={selectedVersionId || timetable.schedule_version_id || ''}
+              onChange={(e) => setSelectedVersionId(Number(e.target.value))}
+              className="px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium text-slate-700 dark:text-slate-300"
+            >
+              {timetable.available_versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name || `Version ${v.version_no}`} ({v.status})
+                </option>
+              ))}
+            </select>
+          )}
 
           <button
             onClick={handlePrint}
@@ -108,7 +126,9 @@ export const MyTimetablePage: React.FC = () => {
       {/* Print Only Header */}
       <div className="hidden print:block text-center border-b pb-4 mb-4">
         <h1 className="text-xl font-bold">{timetable?.professor_name} — Teaching Timetable</h1>
-        <p className="text-sm text-slate-600">{activeTerm?.name} • Published University Timetable</p>
+        <p className="text-sm text-slate-600">
+          {activeTerm?.name} • Published Master Timetable • Prepared by: {timetable?.created_by || 'Super Administrator'}
+        </p>
       </div>
 
       {/* Status & Summary Bar */}
@@ -118,11 +138,18 @@ export const MyTimetablePage: React.FC = () => {
             <UserCheck className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              {timetable?.professor_name || 'Loading Professor...'}
-            </h2>
-            <p className="text-xs text-slate-500 font-mono">
-              {timetable?.meetings?.length || 0} Teaching Sessions Scheduled
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {timetable?.professor_name || 'Loading Professor...'}
+              </h2>
+              {timetable?.created_by && (
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                  Prepared by Super Admin: <span className="font-semibold">{timetable.created_by}</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">
+              {timetable?.meetings?.length || 0} Teaching Sessions Scheduled • {timetable?.version_name || 'Schedule Version'}
             </p>
           </div>
         </div>

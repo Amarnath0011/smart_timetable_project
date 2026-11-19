@@ -8,7 +8,12 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 
-from apps.accounts.permissions import IsSuperAdminOrReadOnly, IsSuperAdmin
+from apps.accounts.permissions import (
+    IsSuperAdminOrReadOnly,
+    IsSuperAdmin,
+    IsBranchCoordinator,
+    IsBranchCoordinatorOrReadOnly,
+)
 from apps.accounts.models import User, Role
 from apps.academics.models import TeachingAssignment, InstructionGroup, AcademicTerm, Branch, TimeSlot
 from apps.facilities.models import Room, RoomUnavailability
@@ -51,7 +56,7 @@ class StandardResultsSetPagination(PageNumberPagination):
 class ScheduleVersionViewSet(viewsets.ModelViewSet):
     queryset = ScheduleVersion.objects.select_related('term__academic_year', 'created_by').prefetch_related('meetings').all()
     serializer_class = ScheduleVersionSerializer
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinator]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'term__name']
     ordering_fields = ['term', 'version_no', 'revision', 'created_at']
@@ -60,6 +65,8 @@ class ScheduleVersionViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['submit_review', 'validate_sweep', 'retrieve', 'list']:
             return [IsAuthenticated()]
+        if self.action == 'create':
+            return [IsBranchCoordinator()]
         return [IsSuperAdminOrReadOnly()]
 
     def get_queryset(self):
@@ -122,7 +129,7 @@ class ValidatePlacementView(APIView):
     Authoritative Timetable Conflict Validation Endpoint (§8).
     Evaluates placement constraints without modifying database records.
     """
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
 
     @extend_schema(
         request=ValidationRequestSerializer,
@@ -165,7 +172,7 @@ class ScheduledMeetingViewSet(viewsets.ModelViewSet):
         'room__building__campus'
     ).prefetch_related('meeting_instruction_groups__instruction_group').all()
     serializer_class = ScheduledMeetingSerializer
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
 
     def create(self, request, *args, **kwargs):
         serializer = SaveMeetingRequestSerializer(data=request.data)
@@ -229,7 +236,7 @@ class TimetableGridView(APIView):
     """
     Returns the timetable grid for a schedule version, filterable by branch, cohort, or professor.
     """
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
 
     @extend_schema(description="Retrieve structured weekly timetable grid for a schedule version.")
     def get(self, request, version_id):
@@ -269,7 +276,7 @@ class AvailableRoomsView(APIView):
     """
     Returns all free rooms for a specified weekday and time slot range.
     """
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
 
     def get(self, request, version_id):
         version = get_object_or_404(ScheduleVersion, id=version_id)
@@ -323,7 +330,7 @@ class BatchUpdateMeetingsView(APIView):
     """
     Updates or moves multiple meetings in one atomic transaction.
     """
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinator]
 
     def post(self, request):
         version_id = request.data.get('schedule_version_id')
@@ -351,14 +358,42 @@ class MyTimetableAPIView(APIView):
     def get(self, request):
         user = request.user
         term_id = request.query_params.get('term_id')
+        version_id = request.query_params.get('version_id')
 
-        # Find schedule version: prefer PUBLISHED, or term-specific, or latest
-        versions = ScheduleVersion.objects.all()
+        # Find schedule version: prefer explicit version_id, or PUBLISHED with meetings,
+        # or any version with meetings for this professor created by admin, or latest
+        versions = ScheduleVersion.objects.all().select_related('term', 'created_by')
         if term_id:
             versions = versions.filter(term_id=term_id)
 
-        pub_ver = versions.filter(status=ScheduleVersion.Status.PUBLISHED).first()
-        active_ver = pub_ver or versions.first()
+        active_ver = None
+        if version_id:
+            active_ver = versions.filter(id=version_id).first()
+
+        # 1. Prefer published version that contains meetings for this professor
+        if not active_ver:
+            active_ver = versions.filter(
+                status=ScheduleVersion.Status.PUBLISHED,
+                meetings__teaching_assignment__professor=user
+            ).first()
+
+        # 2. Prefer any published version
+        if not active_ver:
+            active_ver = versions.filter(status=ScheduleVersion.Status.PUBLISHED).first()
+
+        # 3. Prefer any version containing scheduled meetings for this professor (e.g. draft/under review by admin)
+        if not active_ver:
+            active_ver = versions.filter(
+                meetings__teaching_assignment__professor=user
+            ).distinct().first()
+
+        # 4. Prefer any version that has meetings scheduled
+        if not active_ver:
+            active_ver = versions.filter(meetings__isnull=False).distinct().first()
+
+        # 5. Fallback to latest version
+        if not active_ver:
+            active_ver = versions.first()
 
         meetings = []
         if active_ver:
@@ -385,10 +420,26 @@ class MyTimetableAPIView(APIView):
                 'id', 'date', 'name', 'is_academic_holiday'
             ))
 
+        creator_name = (
+            active_ver.created_by.full_name
+            if (active_ver and active_ver.created_by)
+            else 'Super Administrator'
+        )
+
+        all_versions = (
+            list(versions.values('id', 'version_no', 'name', 'status'))
+            if versions.exists()
+            else []
+        )
+
         return Response({
             'schedule_version_id': active_ver.id if active_ver else None,
+            'version_name': active_ver.name if active_ver else None,
+            'term_id': active_ver.term_id if active_ver else None,
             'term_name': active_ver.term.name if active_ver else None,
             'status': active_ver.status if active_ver else None,
+            'created_by': creator_name,
+            'available_versions': all_versions,
             'professor_id': user.id,
             'professor_name': user.full_name,
             'meetings': meetings,
@@ -402,7 +453,7 @@ class ProfessorTimetableAPIView(APIView):
     GET /api/professors/{id}/timetable/
     Coordinator and Admin view of any professor's scheduled timetable.
     """
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
 
     def get(self, request, professor_id):
         prof = get_object_or_404(User, id=professor_id)
@@ -490,7 +541,7 @@ class HolidayCalendarViewSet(viewsets.ModelViewSet):
     """
     queryset = HolidayCalendar.objects.select_related('term').all()
     serializer_class = HolidayCalendarSerializer
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['date']
@@ -515,7 +566,7 @@ class DateOverrideViewSet(viewsets.ModelViewSet):
         'created_by'
     ).all()
     serializer_class = DateOverrideSerializer
-    permission_classes = [IsSuperAdminOrReadOnly]
+    permission_classes = [IsBranchCoordinatorOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()

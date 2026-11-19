@@ -14,16 +14,21 @@ import {
   Clock,
   Sparkles,
   FlaskConical,
+  UserCheck,
 } from 'lucide-react';
 import { academicsService } from '../services/academics';
-import { Course, CourseType, Department } from '../types';
+import { facultyService } from '../services/faculty';
+import { Course, CourseType, Department, Branch } from '../types';
 
 const courseSchema = z.object({
   code: z.string().min(2, 'Code must be at least 2 chars').max(30),
   name: z.string().min(3, 'Course title required').max(150),
   credit: z.coerce.number().min(1).max(10),
   course_type: z.enum(['THEORY', 'LAB', 'PROJECT', 'SEMINAR']),
+  semester: z.coerce.number().min(1, 'Semester must be between 1 and 12').max(12, 'Max semester 12'),
+  branch: z.coerce.number().optional().nullable(),
   department: z.coerce.number().optional().nullable(),
+  professor: z.coerce.number().optional().nullable(),
   description: z.string().optional(),
   weekly_meetings: z.coerce.number().min(1).max(10),
   duration_slots: z.coerce.number().min(1).max(4),
@@ -37,6 +42,9 @@ export const CoursesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState<number | undefined>();
+  const [semesterFilter, setSemesterFilter] = useState<number | undefined>();
+  const [branchFilter, setBranchFilter] = useState<number | undefined>();
+  const [profFilter, setProfFilter] = useState<number | undefined>();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -47,12 +55,25 @@ export const CoursesPage: React.FC = () => {
     queryFn: academicsService.getDepartments,
   });
 
+  const { data: branches = [] } = useQuery({
+    queryKey: ['branches'],
+    queryFn: () => academicsService.getBranches(),
+  });
+
+  const { data: professors = [] } = useQuery({
+    queryKey: ['professors'],
+    queryFn: () => facultyService.getProfessors(),
+  });
+
   const { data: courses = [], isLoading } = useQuery({
-    queryKey: ['courses', typeFilter, deptFilter],
+    queryKey: ['courses', typeFilter, deptFilter, semesterFilter, branchFilter, profFilter],
     queryFn: () =>
       academicsService.getCourses({
         course_type: typeFilter || undefined,
         department: deptFilter,
+        semester: semesterFilter,
+        branch: branchFilter,
+        professor: profFilter,
       }),
   });
 
@@ -71,6 +92,10 @@ export const CoursesPage: React.FC = () => {
       name: '',
       credit: 3,
       course_type: 'THEORY',
+      semester: 1,
+      branch: null,
+      department: null,
+      professor: null,
       weekly_meetings: 3,
       duration_slots: 1,
       preferred_room_type: 'CLASSROOM',
@@ -111,7 +136,10 @@ export const CoursesPage: React.FC = () => {
         name: data.name,
         credit: data.credit,
         course_type: data.course_type,
+        semester: data.semester,
+        branch: data.branch || null,
         department: data.department || null,
+        professor: data.professor || null,
         description: data.description || '',
         delivery_rule: {
           weekly_meetings: data.weekly_meetings,
@@ -126,6 +154,7 @@ export const CoursesPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
+      queryClient.invalidateQueries({ queryKey: ['curriculum'] });
       setIsModalOpen(false);
       reset();
     },
@@ -136,7 +165,10 @@ export const CoursesPage: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => academicsService.deleteCourse(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['courses'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+      queryClient.invalidateQueries({ queryKey: ['curriculum'] });
+    },
   });
 
   const openCreateModal = () => {
@@ -146,6 +178,10 @@ export const CoursesPage: React.FC = () => {
       name: '',
       credit: 3,
       course_type: 'THEORY',
+      semester: 1,
+      branch: null,
+      department: null,
+      professor: null,
       weekly_meetings: 3,
       duration_slots: 1,
       preferred_room_type: 'CLASSROOM',
@@ -160,7 +196,10 @@ export const CoursesPage: React.FC = () => {
     setValue('name', c.name);
     setValue('credit', c.credit);
     setValue('course_type', c.course_type);
+    setValue('semester', c.semester || 1);
+    setValue('branch', c.branch || null);
     setValue('department', c.department || undefined);
+    setValue('professor', c.professor || null);
     setValue('description', c.description || '');
     setValue('weekly_meetings', c.delivery_rule?.weekly_meetings || 3);
     setValue('duration_slots', c.delivery_rule?.duration_slots || 1);
@@ -223,6 +262,32 @@ export const CoursesPage: React.FC = () => {
         </select>
 
         <select
+          value={semesterFilter || ''}
+          onChange={(e) => setSemesterFilter(e.target.value ? Number(e.target.value) : undefined)}
+          className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold"
+        >
+          <option value="">All Semesters</option>
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+            <option key={s} value={s}>
+              Semester {s}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={branchFilter || ''}
+          onChange={(e) => setBranchFilter(e.target.value ? Number(e.target.value) : undefined)}
+          className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+        >
+          <option value="">All Branches</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} ({b.code})
+            </option>
+          ))}
+        </select>
+
+        <select
           value={deptFilter || ''}
           onChange={(e) => setDeptFilter(e.target.value ? Number(e.target.value) : undefined)}
           className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
@@ -231,6 +296,19 @@ export const CoursesPage: React.FC = () => {
           {departments.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name} ({d.code})
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={profFilter || ''}
+          onChange={(e) => setProfFilter(e.target.value ? Number(e.target.value) : undefined)}
+          className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+        >
+          <option value="">All Faculty</option>
+          {professors.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.full_name} ({p.department_code || 'Faculty'})
             </option>
           ))}
         </select>
@@ -248,10 +326,12 @@ export const CoursesPage: React.FC = () => {
               <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider font-semibold">
                 <tr>
                   <th className="px-5 py-3">Code & Name</th>
+                  <th className="px-5 py-3">Semester</th>
                   <th className="px-5 py-3">Type</th>
                   <th className="px-5 py-3">Credits</th>
                   <th className="px-5 py-3">Weekly Schedule Pattern</th>
-                  <th className="px-5 py-3">Department</th>
+                  <th className="px-5 py-3">Course / Branch & Dept</th>
+                  <th className="px-5 py-3">Assigned Faculty</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -266,6 +346,11 @@ export const CoursesPage: React.FC = () => {
                           <span className="font-mono text-primary-600 dark:text-primary-400">{c.code}</span>
                           <span>— {c.name}</span>
                         </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                          Semester {c.semester || 1}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5">
                         <span
@@ -294,7 +379,22 @@ export const CoursesPage: React.FC = () => {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-slate-500">
-                        {c.department_name ? `${c.department_name} (${c.department_code})` : 'University-wide'}
+                        <div className="font-semibold text-slate-800 dark:text-slate-200">
+                          {c.branch_name ? `${c.branch_name} (${c.branch_code})` : 'All Branches'}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {c.department_name ? `${c.department_name} (${c.department_code})` : 'University-wide'}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {c.professor_name ? (
+                          <div className="flex items-center gap-1.5 font-medium text-slate-800 dark:text-slate-200">
+                            <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>{c.professor_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic">Unassigned</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-right space-x-2">
                         <button
@@ -384,10 +484,33 @@ export const CoursesPage: React.FC = () => {
                   <label className="font-semibold block mb-1">Academic Credits</label>
                   <input
                     type="number"
+                    min="1"
+                    max="10"
                     {...register('credit')}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
                   />
+                  {errors.credit && <p className="text-rose-500 mt-1">{errors.credit.message}</p>}
                 </div>
+                <div>
+                  <label className="font-semibold block mb-1 flex items-center justify-between">
+                    <span>Target Semester</span>
+                    <span className="text-[10px] text-primary-600 font-bold">Required</span>
+                  </label>
+                  <select
+                    {...register('semester')}
+                    className="w-full px-3 py-2 rounded-lg border border-primary-300 dark:border-primary-700 bg-primary-50/30 dark:bg-primary-950/20 font-bold text-slate-900 dark:text-white"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((sem) => (
+                      <option key={sem} value={sem}>
+                        Semester {sem}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.semester && <p className="text-rose-500 mt-1">{errors.semester.message}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold block mb-1">Department</label>
                   <select
@@ -402,6 +525,41 @@ export const CoursesPage: React.FC = () => {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="font-semibold block mb-1">Course / Degree Program (Branch)</label>
+                  <select
+                    {...register('branch')}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="">All Branches / Non-specific</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code}) — {b.degree_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-primary-600" />
+                    <span>Assigned Professor / Lecturer</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">Can be assigned or updated anytime</span>
+                </label>
+                <select
+                  {...register('professor')}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                >
+                  <option value="">-- Select Professor / Lecturer (Optional) --</option>
+                  {professors.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name} ({p.designation} — {p.department_name || p.department_code || 'Faculty'})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Delivery Rule Box (§5.3 Architecture Spec) */}

@@ -22,7 +22,7 @@ const cohortSchema = z.object({
   branch: z.coerce.number().min(1, 'Please select a branch'),
   term: z.coerce.number().min(1, 'Please select an academic term'),
   semester_no: z.coerce.number().min(1, 'Min 1'),
-  section_code: z.string().min(1, 'Section is required (e.g. A, B)').max(10),
+  section_code: z.string().min(1, 'Batch is required (e.g. A, B)').max(10),
   student_count: z.coerce.number().min(1).max(250),
 });
 
@@ -155,7 +155,7 @@ export const CohortsPage: React.FC = () => {
           </div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Cohorts & Lab Groups</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Organize student cohorts by branch, semester, and section. Divide into lab batches (e.g. A-L1, A-L2) for laboratory scheduling.
+            Organize student batches by branch and semester. Divide into lab groups (e.g. A-L1, A-L2) for laboratory scheduling.
           </p>
         </div>
         <button
@@ -231,7 +231,7 @@ export const CohortsPage: React.FC = () => {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-slate-900 dark:text-white">
-                          {cohort.branch_code} — Semester {cohort.semester_no}, Section {cohort.section_code}
+                          {cohort.branch_code} — Semester {cohort.semester_no}, Batch {cohort.section_code}
                         </span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-primary-100 text-primary-800 dark:bg-primary-950 dark:text-primary-300">
                           {cohort.term_name}
@@ -254,7 +254,7 @@ export const CohortsPage: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm(`Delete cohort ${cohort.branch_code} Sem ${cohort.semester_no} Sec ${cohort.section_code}?`)) {
+                        if (confirm(`Delete cohort ${cohort.branch_code} Sem ${cohort.semester_no} Batch ${cohort.section_code}?`)) {
                           deleteCohortMutation.mutate(cohort.id);
                         }
                       }}
@@ -419,7 +419,7 @@ export const CohortsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="font-semibold block mb-1">Section Code</label>
+                  <label className="font-semibold block mb-1">Batch Code</label>
                   <input
                     type="text"
                     placeholder="e.g. A, B, C"

@@ -137,7 +137,7 @@ export const academicsService = {
   },
 
   // Courses
-  async getCourses(params?: { course_type?: string; department?: number }): Promise<Course[]> {
+  async getCourses(params?: { course_type?: string; department?: number; semester?: number; branch?: number; professor?: number }): Promise<Course[]> {
     const res = await api.get<{ results: Course[] } | Course[]>('/courses/', { params });
     return Array.isArray(res.data) ? res.data : res.data.results || [];
   },

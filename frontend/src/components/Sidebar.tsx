@@ -166,7 +166,7 @@ export const Sidebar: React.FC = () => {
               </NavLink>
               <NavLink to="/cohorts" className={navLinkClass}>
                 <Users className="w-4 h-4" />
-                <span>Cohorts & Batches</span>
+                <span>Student Batches</span>
               </NavLink>
               <NavLink to="/assignments" className={navLinkClass}>
                 <UserCheck className="w-4 h-4" />
